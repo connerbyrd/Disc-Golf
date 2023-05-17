@@ -1,0 +1,223 @@
+---
+title: "Exploring Factors Of My Disc Golf Performance"
+author: "Conner Byrd"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    fig_cap: yes
+  html_document:
+    df_print: paged
+header-includes:
+- \usepackage{float}
+- \floatplacement{figure}{H}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, include = FALSE, fig.align = 'center', out.extra = '')
+```
+
+```{r packages}
+library(tidyverse)
+library(dplyr)
+library(MASS)
+library(kableExtra)
+library(janitor)
+library(caret)
+```
+
+## Introduction
+
+### Background
+
+Disc golf is a sport in which individuals throw specialized plastic discs at disc-catching targets in an attempt to finish the hole, and thus the course, in as few throws as possible. Born in the 1960s in southern California, disc golf has carried around a niche community of frisbee enthusiasts for most of its lifetime. However, beginning in the early 2010s with advancements in media coverage, disc golf began to find its way into the public eye and establish itself as a legitimate sport. This rise in popularity turned into unprecedented exponential growth when COVID lockdowns in early 2020 restricted individuals from attending large gatherings or entering public spaces. With people taking this time to find a new passion, many turned to disc golf as the perfect lockdown sport with its individual-oriented gameplay and spacious fairways, perfect for social distancing. Coupled with the fact that discs are generally quite cheap and can be bought at most sporting good stores across the United States, disc golf has become one of the currently fastest growing sports in not only the country, but the entire world. 
+
+### Motivation
+
+UDisc data collection coupled with polls of active disc golfers estimate that over 71.7 million rounds of disc golf were played worldwide in 2021 [@UDisc]. As well, the PDGA (Professional Disc Golf Association), the governing body of all sanctioned disc golf tournaments and events, has over 240,000 registered members as of the writing of this report. For reference, this number was only 100,000 in October 2017. Due to the general newness of the sport coupled with the quick increase in popularity, there are very few substantial analyses of disc golf in any capacity for how large the general disc golfing community is. 
+
+Additionally, while the two sports share a similar premise, traditional golf and disc golf have many differences that don't allow for statistical conclusions derived from one sport to be able to be prescribed to the other. Golf is much more simplistic (albeit, more difficult) in its style and gameplay. It is traditionally played on wide-open fairways where the main factors that affect scoring are course design and weather conditions. Disc golf, on the other hand, can take on many forms. Some courses are more open, where distance is often the main difficulty. Other courses play through tight woods, forcing players to carve specific lines through tricky fairways. Many other factors such as extreme changes in elevation, drastically sloped greens, and unique out-of-bounds rules that are not found in traditional golf manifest themselves in disc golf, implying that there are many more factors in disc golf that go into how well someone scores during a certain round.
+
+For these reasons, this report attempts to identify which predictor variables have a statistically significant increase or decrease on my disc golf scoring capabilities and then quantify exactly how much I can expect these factors will affect my rounds. In doing this, I hope to be able to identify factors in course design, weather, time of day, who I play with, and many other variables that lead to an increase in personal performance. This will allow me to select events that cater to my strengths with the ultimate goal of boosting my tournament placements and on-course productivity. Additionally, I hope to explain how some of these factors could be significant to the general disc golfing population and give others who play the sport certain aspects to pay attention to while playing.
+
+### The Data
+
+The data used within this report was collected via the UDisc App, a popular app among disc golfers used to score rounds digitally. UDisc contains data about both all of my scored rounds as well as information about all disc golf courses in the world, such as location and course length. The initial CSV downloaded from UDisc contained 1,161 observations of 33 predictor variables.
+
+### Data Processing
+
+Due to all instances of data being logged either manually by me or automatically by the UDisc app over the past 3 years, there were no instances of missing data to deal with in the dataset. The dataset was first filtered to only include observations where I was the player, as I wanted to center the analysis on which factors impacted my scoring. I then removed 4 observations in which I used the app to score rounds of mini golf. This cleaned dataset was then exported to Excel in order to add a few additional predictor variables that were not automatically added by UDisc and remove a few predictor variables that I chose to steer my analysis away from.
+
+The following variables were removed from the dataset:
+
+-   `PlayerName:` Not necessary due to my rounds being the only ones analyzed.
+
+-   `Date:` Used to create `Month`.
+
+-   `Total:` I am analyzing the scores to par, not total strokes as those would correlate highly with course length.
+
+-   All hole variables (`Hole1` to `Hole27`) as I am looking to identify course features and not hole-specific features. 
+
+The following variables were added to the dataset, either through Excel or R:
+
+-   `Month:` The month the round occurred in. Derived from `Date`.
+
+-   `Hour:` The most recent hour since starting the round, rounded down. Recorded on a scale from 0 (12AM) to 24 (12AM the next day).
+
+-   `CourseLength:` Length of the course in feet.
+
+-   `Holes:` Number of holes on the course.
+
+-   `Weather:` The type of weather during the round, has 4 categories (Sunny, Partly Cloudy, Cloudy, Drizzle)
+
+-   `Temperature:` Mean temperature over the course of the round in Fahrenheit.
+
+-   `WindSpeed:` Mean wind speed over the course of the round in miles per hour.
+
+-   `TimePlayed:` Time spent playing the round in minutes.
+
+-   `StepsWalked:` Total number of steps taken over the course of the round as tracked by phone.
+
+-   `Guests:` Number of additional people the round was being played with.
+
+-   `GoodScore:` Whether the round was under par or not. Listed as "Yes" if under par and "No" if not under par.
+
+In addition to these changes, the `LayoutName` variable was cleaned up and renamed to `Tees`. This variable contains the course designated tee colors for the round, which can be Red (usually for beginner players), White (intermediate players), or Blue (advanced or pro players). The fully cleaned dataset contains 394 observations of 14 variables (13 predictor variables plus the response variable, `Score`). This cleaned dataset was then imported back into R in order to observe some initial exploratory data analysis.
+
+```{r csv import}
+udisc <- read.csv("UDisc Scorecards.csv")
+print(udisc)
+```
+
+```{r initial data filtering}
+udisc <- udisc %>% filter(PlayerName == "Conner Byrd")
+names(udisc)[names(udisc) == "X..."] <- "Score"
+
+write.csv(udisc, file = "udisc.csv")
+```
+
+```{r retriving new data from excel}
+udisc <- read.csv("udisc_new.csv")
+print(udisc)
+```
+
+```{r good score variable}
+udisc <- udisc %>% mutate(GoodScore = ifelse(Score > 0, "No", "Yes"))
+```
+
+### Exploratory Data Analysis
+
+To test a few initial hypotheses surrounding my disc golf round scores and the potential factors that could have an effect on them, I conducted some exploratory data analysis. 
+
+```{r echo = FALSE, include = TRUE, fig.height = 3.5}
+ggplot(udisc, aes(x = CourseLength, y = Score)) + 
+  geom_point() +
+  labs(x = "Length of Course (ft)", y = "Score (to par)") +
+  ggtitle("Figure 1: Scoring based on Course Length")
+```
+
+Figure 1 illustrates the length of course I played on plotted against the final score I received, regardless of course par. In this plot, we observe a fairly strong, positive correlation between course length and my score. A couple of initial suspicions I had coming into the study could explain this correlation: that longer courses get me more fatigued and thus cause me to play worse or that my game is more efficient for shorter courses with tighter fairways due to my forehand dominant play style.
+
+```{r echo = FALSE, include = TRUE, echo = FALSE, fig.height = 2.5}
+plot_type = ggplot(udisc, aes(x = CourseType, fill = GoodScore)) +
+  geom_bar(position = "fill") +
+  xlim("Mixed", "Open", "Wooded") +
+  labs(x = "Type of Course", y = "Proportion of Rounds Under Par", fill = "Under Par?") +
+  ggtitle("Figure 2: Effect of Course Type on Scoring")
+plot_type
+```
+
+Interestingly though, in Figure 2 we see that the type of course that I play seems to affect my ability to produce a good score very little. While we can see that I tend to play my highest proportion of good rounds at wooded courses, the difference is small enough between the 3 course types that it is hard to say if this is substantial based on the eye test alone. This perhaps affirms the fact that I could be getting fatigued moreso than my play style favors shorter courses, which tend to be wooded. 
+
+```{r echo = FALSE, include = TRUE, echo = FALSE, fig.height = 2.5}
+plot_guests = ggplot(udisc, aes(x = Guests, fill = GoodScore)) +
+  geom_bar(position = "fill") +
+  labs(x = "Number of Guests", y = "Proportion of Rounds Under Par", fill = "Under Par?") +
+  ggtitle("Figure 3: Effect of Guests on Scoring")
+plot_guests
+```
+
+In Figure 3 we can observe the relationship that the number of guests playing with me on the card has on my score. This plot seems to hint at another hypothesis I had coming into the study: that I am more of a nervous player and lose some potential when playing with friends or large groups. We can observe that I obtain a good score in roughly 70% of solo rounds I play. This proportion drops off quickly to only 50% with 1 guest on the card and falls all the way to below 40% with 4 guests on the card. This certainly seems to hint at some sort of correlation between the number of guests present and the score I obtain for my round, whether it be the aforementioned nervousness I can sometimes get, the heightened focus I can achieve while playing on my own terms, or the fact that I tend to want to play harder courses when playing with others. 
+
+```{r echo = FALSE, include = TRUE, echo = FALSE, fig.height = 2.5}
+plot_guests = ggplot(udisc, aes(x = Weather, fill = GoodScore)) +
+  geom_bar(position = "fill") +
+  xlim("Sunny", "Partly Cloudy", "Cloudy", "Drizzle") +
+  labs(x = "Weather", y = "Proportion of Rounds Under Par", fill = "Weather Type") +
+  ggtitle("Figure 4: Effect of Weather on Scoring")
+plot_guests
+```
+
+One final hypothesis I wanted to assess before constructing the main model can be seen in Figure 4, which plots the type of weather I experienced during the round against my final score. Interestingly, partly cloudy and cloudy conditions produced a higher proportion of below par rounds than sunny conditions. which subverted my initial expectations. It appears that these 3 weather types tend to not produce a substantial effect on my rounds scores. However, as expected, playing in drizzly conditions severely hinders my scoring performance, shooting under par in only roughly 20% of rounds with drizzle. 
+
+## Methodology & Results
+
+Before constructing the initial full model, one final round of data filtering was performed. This removed the `CourseName` and `GoodScore` variables as both too closely relate with an obvious increase in score performance and were thus not relevant for evaluation. 
+
+```{r}
+udisc <- subset(udisc, select = -c(CourseName, GoodScore, X))
+```
+
+With the data now fully filtered, modelling could begin. I first began by fitting the full model, which consists of a multiple linear regression model of `Score` with all remaining variables in the dataset being featured as predictors. This model was chosen as it lends itself to simple prediction and interpretation of our significant predictor variables while still providing accurate predictive results given the normally distributed nature of many of the numerical variables. The multiple linear regression model is formulated by the equation: $$y_i = \beta_0+\beta_1x_{1,i}+\beta_2x_{2,i}+...+\beta_kx_{k,i}$$
+
+```{r}
+udisc_full <- glm(Score ~ ., data = udisc)
+```
+
+The multiple linear regression full model was then used for both-direction stepwise regression in order to improve overall model performance and better select for significant predictor variables. Both-direction stepwise regression begins with an initial intercept model, iteratively adding variables sequentially to the model much like in forwards stepwise regression. However, after each predictor is added, additional checks are done to remove any variables that may have become less beneficial towards model fit. This process is repeated until the resulting model has the lowest possible AIC value. AIC itself is an estimator of the predictive error of a model, allowing us to directly assess our model's performance. The full stepwise regression output showcasing the coefficient estimates and p-values are shown below. 
+
+```{r stepwise, echo = FALSE, include = TRUE}
+step_model <- stepAIC(udisc_full, direction = "both", trace = FALSE)
+model_prediction <- clean_names(as.data.frame(summary(step_model)$coefficients)) %>%
+  mutate(pr_t = if_else(pr_t < 0.0001, 0.00, pr_t),
+         pr_t = ceiling(pr_t*10000)/10000,
+         pr_t = as.character(pr_t),
+         pr_t = if_else(pr_t == "0", "<0.001", if_else(pr_t == "2e-04", "<0.001", pr_t))) %>%
+  kable(digits = 4) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, latex_options = c("hold_position"))
+model_prediction
+```
+
+This both-direction stepwise regression model identifies 7 predictor variables as significant statistical predictors at the alpha = 0.05 level. These significant predictors are as follows: `Tees`, `CourseLength`, `Holes`, `CourseType`, `Temperature`, `WindSpeed`, and `StepsWalked`. Due to the fact that multiple linear regression was chosen for the structure of the full model, these coefficient estimates can be interpreted for numerical predictors quite trivially as the predicted expected increase or decrease in score for every unit increase in the predictor variable. For categorical predictors, this can be interpreted as the predicted expected increase or decrease in score as compared to the baseline category. The interpretations for each of the significant predictors are shown here:
+
+-   `Tees:` When playing from course tees labeled as "Blue" (advanced or pro tees) my predicted expected score is 1.5472 strokes lower than when I play from course tees labeled as "White" (intermediate tees) and 3.5558 strokes lower than when I play from course tees labeled as "Red" (recreational tees). This result seems to imply that for the most part, course designers are correctly labeling their tee difficulties, as we see that I can expect to score the lowest on Red tees, followed by Whites, then Blues, which is what we would expect if the tees were correctly assigned.
+
+-   `CourseLength:` For every 1 foot increase in the overall length of the course, my predicted expected score increases by 0.0021 strokes. This corresponds to a predicted expected 0.21 stroke increase for every 100 foot increase in the overall length of the course or a 2.1 stroke increase for every 1,000 foot increase in the overall length of the course. Like mentioned briefly in the exploratory data analysis section, it was somewhat unusual to see course length spring up as a significant predictor of score. Even though some courses are certainly longer than others, these longer courses are usually compensated for by a higher par value. This conclusion could lend itself to a few hypotheticals. Firstly, I could be getting fatigued while walking long courses. The longest courses in the dataset are upwards of 2 miles in length, not including additional walks between holes. This could theoretically have a negative impact on my throwing capabilities as the round progresses, resulting in a worse score. Secondly, longer courses could be allocating par in a way that makes it more difficult to score on. For example, the longest course I have ever played, the par 68 New London DGC in Forest, VA at a length of 11,329 feet off the blue tees has par 3s that average close to 400 feet in length a piece, whereas at another course off the blues, the 5,670 foot par 55 Zube Park has par 3s as short as 198 feet. Lastly, I hypothesized that shorter courses could play to my strength more due to the fact that these shorter courses tend to also be the ones that are more wooded or have tighter fairways. My throw of choice, the forehand, involves facing towards the target while throwing. As a result, it is typically touted as having greater accuracy but less overall distance compared to its counterpart throw of the backhand.
+
+-   `Holes:` For every 1 hole increase in the number of total holes on the course, my predicted expected score decreases by 0.8134 strokes. This is a result that is seemingly counter intuitive at first, but can help be explained by my style of play. Since I am typically a scratch or better player (I get a score E or better more than 50% of the time), my round scores are mostly defined by the number of birdies I am able to get. More birdies equates to more under par which equates to a better score. Thus, courses which only provide 9 holes are typically harder for me to score better on than full 18 hole courses which provide 18 different opportunities for birdie. 
+
+-   `CourseType:` When playing on a course that is Mixed in style (the course is comprised of more than 25% but less than 75% open holes and more than 25% but less than 75% wooded holes), my predicted expected score is 1.8300 strokes greater than when I play on a Wooded Course and 2.8059 strokes lesser than when I play on an Open Course. This provides some affirmation for the third hypothesis listed under `CourseLength`, in which I describe my play style as being better suited for shorter, woods courses. It appears that on average, I can be expected to play a given wooded course approximately 4.6 strokes better than a given open course, with Mixed courses falling fairly close to the middle of the two.
+
+-   `Temperature:` For every 1 Fahrenheit degree increase in the mean temperature recorded while playing a round, my predicted expected score decreases by -0.0356 strokes. The variable significance despite the low coefficient estimate is likely due to the fact that temperature and my course performance likely have a relationship that is nonlinear, giving it a low coefficient estimate. This is likely because the ideal temperature for my play lies closer to the mean of all temperatures moreso than having a traditional linear relationship. However, from this analysis we can still extract that my predicted expected performance appears to be significantly increased in warmer weather than in cooler weather.
+
+-   `WindSpeed:` For every 1 mile per hour increase in the mean wind speed recorded while playing a round, my predicted expected score increases by 0.1629 strokes. This makes sense, as wind is commonly known in disc golf to affect the flight of discs in such a way that it makes controlling them harder, thus leading to worse overall scores. 
+
+-   `StepsWalked:` For every each additional step walked while playing a round, my predicted expected score increases by 0.0007 strokes. This means that for each additional 1,000 steps walked while playing a round, my predicted expected score increases by approximately 0.7 strokes. This possibly affirms an earlier hypothesis that stated that my increased scores on longer courses could be due to fatigue after playing for so long. 
+
+In order to assess model performance, I used k-fold cross validation on the model selected by both-direction stepwise selection. K-fold cross validation starts by splitting the dataset into k equally sized "folds". Then, for each unique group, 1 fold is held out as the test dataset whereas the other remaining folds combine to form the training dataset. For values of of k between 2 and 20 inclusive, it was determined that k = 11 folds produced the best results. These showed that the model has an r-squared value of 0.393. While this is fairly low for an r-squared model value, it does show that there is at least some model fit from the data. This is supported by the low root mean squared error (RMSE) value which implies good model strength.
+
+```{r k-fold cv, echo = FALSE, include = TRUE}
+set.seed(1234)
+train_control <- trainControl(method = "cv", number = 11)
+modelpred <- train(Score ~ Tees + CourseLength + Holes + CourseType + Temperature + 
+                     WindSpeed + StepsWalked, data = udisc, method = "glm", 
+               trControl = train_control)
+modelpred
+```
+
+## Discussion
+
+Through this study, I have identified 7 key predictors that appear to have a statistically significant expected effect on my score to par during rounds of disc golf. These predictors are the tees I played off of during the round (`Tees`), the length of the course (`CourseLength`), the number of holes on the course (`Holes`), the type of course it was (`CourseType`), the temperature it was while I was playing (`Temperature`), the wind speed during the round (`WindSpeed`), and the number of steps I walked during the round (`StepsWalked`). Compiling the results of the estimated coefficients for each variable yields that an ideal scoring round for me would happen from the Red Tees on a short, wooded course with many holes where the temperature was warm, wind speed was low, and I walked a low amount of steps. While some of these individual conclusions are a bit unsurprising on their own, it was interesting to learn that wooded courses do play easier for me. I feel like my game is fairly well rounded but this shows that being a player who favors a forehand leads to increased accuracy in the woods. It was also interesting to observe that both the length of the course and the number of steps I took during the round were both significant predictors of score. This implies that I do feel some sort of fatigue over the course of a round that impacts my scoring. 
+
+It was also interesting to observe the predictors that were not deemed statistically significant when it came to having an expected effect on my score. These predictors are the month when I played the round (`Month`), the nearest hour to when I began my round (`Hour`), the type of weather I was playing in (`Weather`), the amount of time I played for (`TimePlayed`), and the number of guests I was playing the round with (`Guests`). It appears that initial presumptions that the weather had little effect on my scoring spread, as it was dropped by the stepwise model and the most significant factor, drizzle, only had had an r-squared value of 0.171. It is also intriguing to observe the fact that the number of guests is not a significant predictor of round score, also being dropped by the stepwise model and having an r-squared value of 0.013.
+
+Even though this analysis was just done on my play alone, some of these conclusions could have applications for disc golfers and play in general that are worth discussing. The first of these is that player fatigue is a real thing on long courses with ample walking. Disc golf is typically considered on the more leisurely side but for peak performance it seems to pay to be in shape and avoid fatigue on the course where rounds can take upwards of 3 hours on courses over 2 miles in length. This is especially true for tournaments where 2 full rounds are often played within 1 day. I've learned that it will be important to consider this moving forward and expend energy only when necessary. The second is that weather most definitely has an impact on play and is super important to consider when scheduling events. Many of my worst rounds in recent memory have come when the average winds were at 15 miles per hour or above, so it is important to minimize my time in these conditions as much as possible. It will be worth it to schedule future tournaments or key practice rounds during days where winds are low and temperatures are mild to warm. The final main conclusion is that people definitely have preferences when it comes to course type. Someone like me who favors the forehand throw may score better at wooded courses where accuracy is required off the tee and distances are not as far. However, someone who may be more backhand prevalent could find more success at an open course where scoring is done through distance and power and accuracy receives less punishment.
+
+While this report uncovered many conclusions that were interesting and unexpected, I did experience some limitations that may have impacted results or conclusions. A main shortcoming of my approach was using multiple linear regression as the base for my full model. Although this is not necessarily a bad choice for modeling a numerical response variable with varied numerical and categorical predictor variables, it was clear that one or more variables had some nonlinear correlation with score that may not have appeared in the results. One other area I could have excelled more in was looking further into hole-specific data in order to find my weak points at that level, but I was not able to compile this data quick enough for proper assessment. 
+
+# Appendix
+
+## Appendix A: Full Model Output (Multiple Linear Regression)
+
+```{r, include = TRUE}
+summary(udisc_full)
+```
